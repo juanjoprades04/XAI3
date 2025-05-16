@@ -1,0 +1,105 @@
+---
+title: "Práctica XAI - PDP para bike rentals y casas"
+author: "Tu Nombre"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+
+library(tidyverse)
+library(randomForest)
+library(pdp)
+library(caret)
+library(ggplot2)
+
+bike_data <- read.csv("day.csv")
+
+# Transformaciones indicadas en el enunciado
+bike_data <- bike_data %>%
+  mutate(
+    season_spring = ifelse(season == 1, 1, 0),
+    season_summer = ifelse(season == 2, 1, 0),
+    season_fall = ifelse(season == 3, 1, 0),
+    MISTY = ifelse(weathersit == 2, 1, 0),
+    RAIN = ifelse(weathersit >= 3, 1, 0),
+    temp_denorm = temp * 47 - 8,
+    hum_denorm = hum * 100,
+    windspeed_denorm = windspeed * 67,
+    days_since_2011 = as.integer(as.Date(dteday) - as.Date("2011-01-01"))
+  )
+
+set.seed(123)
+# Variables predictoras que usaremos (más relevantes y variables dummies)
+vars_rf <- c("season_spring", "season_summer", "season_fall",
+             "MISTY", "RAIN", "temp_denorm", "hum_denorm", "windspeed_denorm",
+             "days_since_2011")
+
+rf_model <- randomForest(cnt ~ ., data = bike_data[, c("cnt", vars_rf)], ntree = 200)
+print(rf_model)
+```
+```{r}
+features_pdp <- c("days_since_2011", "temp_denorm", "hum_denorm", "windspeed_denorm")
+
+for (feat in features_pdp) {
+  p <- partial(rf_model, pred.var = feat, grid.resolution = 30)
+  print(
+    autoplot(p) + 
+      ggtitle(paste("PDP for", feat)) +
+      xlab(feat) + ylab("Predicted bike rentals")
+  )
+}
+
+```
+
+```{r}
+# Muestreamos aleatoriamente para reducir tamaño y tiempo de cómputo
+set.seed(123)
+bike_sample <- bike_data %>% sample_n(500)
+
+pdp_2d <- partial(rf_model, pred.var = c("temp_denorm", "hum_denorm"), 
+                  grid.resolution = 30, progress = "text", chull = TRUE, 
+                  train = bike_sample)
+
+# Gráfico 2D con geom_tile para la densidad del PDP
+ggplot(pdp_2d, aes(x = temp_denorm, y = hum_denorm, fill = yhat)) +
+  geom_tile(width = 1, height = 1) + 
+  scale_fill_viridis_c(option = "plasma") +
+  labs(title = "2D PDP: Temperature and Humidity", 
+       x = "Temperature (denormalized)", y = "Humidity (%)", fill = "Predicted rentals") +
+  theme_minimal()
+```
+```{r}
+house_data <- read.csv("kc_house_data.csv")
+
+# Tomamos muestra aleatoria para acelerar
+set.seed(123)
+house_sample <- house_data %>% sample_n(10000)
+
+# Variables usadas
+vars_house <- c("bedrooms", "bathrooms", "sqft_living", "sqft_lot", "floors", "yr_built")
+
+rf_house <- randomForest(price ~ ., data = house_sample[, c("price", vars_house)], ntree = 200)
+print(rf_house)
+```
+```{r}
+library(pdp)
+library(ggplot2)
+
+features_house_pdp <- c("bedrooms", "bathrooms", "sqft_living", "floors")
+
+pdp_house_list <- lapply(features_house_pdp, function(feat) {
+  p <- partial(rf_house, pred.var = feat, grid.resolution = 20)
+  autoplot(p) + 
+    ggtitle(paste("PDP for", feat)) +
+    xlab(feat) + ylab("Predicted price")
+})
+
+for (plot_obj in pdp_house_list) {
+  print(plot_obj)
+}
+
+```
+
+
+
