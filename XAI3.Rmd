@@ -1,6 +1,6 @@
 ---
-title: "Práctica XAI - PDP para bike rentals y casas"
-author: "Tu Nombre"
+title: "XAI Practice - PDP for Bike Rentals and Houses"
+author: "Your Name"
 date: "`r Sys.Date()`"
 output: html_document
 ---
@@ -12,10 +12,17 @@ library(randomForest)
 library(pdp)
 library(caret)
 library(ggplot2)
+library(dplyr)
+```
 
-bike_data <- read.csv("day.csv")
+# 1.Bike Rentals Prediction
 
-# Transformaciones indicadas en el enunciado
+## 1.1 Load and preprocess data
+
+```{r}
+bike_data <- read.csv("C:/Users/Usuario/OneDrive/Documentos/day.csv")
+
+# Apply transformations as indicated in the instructions
 bike_data <- bike_data %>%
   mutate(
     season_spring = ifelse(season == 1, 1, 0),
@@ -28,9 +35,13 @@ bike_data <- bike_data %>%
     windspeed_denorm = windspeed * 67,
     days_since_2011 = as.integer(as.Date(dteday) - as.Date("2011-01-01"))
   )
+```
 
+## 1.2 Fit Random Forest model
+
+```{r}
 set.seed(123)
-# Variables predictoras que usaremos (más relevantes y variables dummies)
+# Define predictor variables including dummy variables
 vars_rf <- c("season_spring", "season_summer", "season_fall",
              "MISTY", "RAIN", "temp_denorm", "hum_denorm", "windspeed_denorm",
              "days_since_2011")
@@ -38,6 +49,9 @@ vars_rf <- c("season_spring", "season_summer", "season_fall",
 rf_model <- randomForest(cnt ~ ., data = bike_data[, c("cnt", vars_rf)], ntree = 200)
 print(rf_model)
 ```
+
+## 1.3 One-dimensional Partial Dependence Plots (PDP)
+
 ```{r}
 features_pdp <- c("days_since_2011", "temp_denorm", "hum_denorm", "windspeed_denorm")
 
@@ -49,11 +63,27 @@ for (feat in features_pdp) {
       xlab(feat) + ylab("Predicted bike rentals")
   )
 }
+```
+
+## 1.4 Variable Importance Plot
+
+```{r}
+varImpPlot(rf_model)
+```
+
+## 1.5 ICE Plot for days_since_2011
+
+```{r}
+library(pdp)
+ice_days <- partial(rf_model, pred.var = "days_since_2011", ice = TRUE)
+autoplot(ice_days)
 
 ```
 
+## 1.6 Two-dimensional Partial Dependence Plot (Temperature and Humidity)
+
 ```{r}
-# Muestreamos aleatoriamente para reducir tamaño y tiempo de cómputo
+# Sample randomly to reduce computational cost
 set.seed(123)
 bike_sample <- bike_data %>% sample_n(500)
 
@@ -61,7 +91,7 @@ pdp_2d <- partial(rf_model, pred.var = c("temp_denorm", "hum_denorm"),
                   grid.resolution = 30, progress = "text", chull = TRUE, 
                   train = bike_sample)
 
-# Gráfico 2D con geom_tile para la densidad del PDP
+# 2D PDP using geom_tile
 ggplot(pdp_2d, aes(x = temp_denorm, y = hum_denorm, fill = yhat)) +
   geom_tile(width = 1, height = 1) + 
   scale_fill_viridis_c(option = "plasma") +
@@ -69,19 +99,41 @@ ggplot(pdp_2d, aes(x = temp_denorm, y = hum_denorm, fill = yhat)) +
        x = "Temperature (denormalized)", y = "Humidity (%)", fill = "Predicted rentals") +
   theme_minimal()
 ```
-```{r}
-house_data <- read.csv("kc_house_data.csv")
 
-# Tomamos muestra aleatoria para acelerar
+## 1.7 Joint density plot of Temperature and Humidity in the dataset
+
+```{r}
+ggplot(bike_data, aes(x = temp_denorm, y = hum_denorm)) +
+  geom_point(alpha = 0.3, color = "grey") +
+  geom_density_2d(color = "blue") +
+  labs(title = "Joint Density of Temperature and Humidity")
+
+```
+
+# 2. House Price Prediction
+
+## 2.1 Load data and sample
+
+```{r}
+house_data <- read.csv("C:/Users/Usuario/OneDrive/Documentos/kc_house_data.csv")
+
+# Random sample to speed up computations
 set.seed(123)
 house_sample <- house_data %>% sample_n(10000)
 
-# Variables usadas
+# Variables to use as predictors
 vars_house <- c("bedrooms", "bathrooms", "sqft_living", "sqft_lot", "floors", "yr_built")
+```
 
+## 2.2 Fit Random Forest model for house prices
+
+```{r}
 rf_house <- randomForest(price ~ ., data = house_sample[, c("price", vars_house)], ntree = 200)
 print(rf_house)
 ```
+
+## 2.3 One-dimensional Partial Dependence Plots for house features
+
 ```{r}
 library(pdp)
 library(ggplot2)
@@ -98,8 +150,17 @@ pdp_house_list <- lapply(features_house_pdp, function(feat) {
 for (plot_obj in pdp_house_list) {
   print(plot_obj)
 }
-
 ```
 
+## 2.4 Variable Importance Plot for house price model
 
+```{r}
+varImpPlot(rf_house)
+```
 
+## 2.5 ICE Plot for sqft_living
+
+```{r}
+ice_living <- partial(rf_house, pred.var = "sqft_living", ice = TRUE)
+autoplot(ice_living)
+```
